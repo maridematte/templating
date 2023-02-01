@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.TemplateEngine.Abstractions;
 using Microsoft.TemplateEngine.Abstractions.Installer;
 using Microsoft.TemplateEngine.Abstractions.TemplatePackage;
+using Microsoft.TemplateEngine.Edge.Settings;
 using Microsoft.TemplateEngine.Utils;
 
 namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
@@ -283,9 +284,17 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
             _ = installRequest ?? throw new ArgumentNullException(nameof(installRequest));
             _ = installer ?? throw new ArgumentNullException(nameof(installer));
 
+            // When installing a local package the identifier will be a path, so we need to collect the template's actual identifier to compare
+            string packageIndetifier = installRequest.PackageIdentifier;
+            if (File.Exists(installRequest.PackageIdentifier))
+            {
+                // For now we are assuming there is only one templte in a package
+                packageIndetifier = GetTemplateIdentityFromPath(installRequest.PackageIdentifier)[0].Identity;
+            }
+
             (InstallerErrorCode result, string message) = await EnsureInstallPrerequisites(
                 packages,
-                installRequest.PackageIdentifier,
+                packageIndetifier,
                 installRequest.Version,
                 installer,
                 cancellationToken,
@@ -310,6 +319,23 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
                 packages.Add(((ISerializableInstaller)installer).Serialize(installResult.TemplatePackage));
             }
             return installResult;
+        }
+
+        private IReadOnlyList<ITemplateInfo> GetTemplateIdentityFromPath(string packagePath)
+        {
+            // TODO figure out how to setup Scanner class here
+            Scanner scanner = new Scanner("environmentSettings");
+
+            // Not sure if we should scan for components or not
+            // Scan is the best way of getting the package information out of a path (I think)
+            ScanResult scanResult = scanner.Scan(packagePath, false);
+            var templatesInPackage = scanResult.Templates;
+            if (templatesInPackage.Any())
+            {
+                throw new InvalidOperationException($"No templates found within {packagePath}");
+            }
+
+            return templatesInPackage;
         }
 
         private class InstallRequestEqualityComparer : IEqualityComparer<InstallRequest>
@@ -339,5 +365,6 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
                 return new { a = obj.InstallerName?.ToLowerInvariant(), b = obj.PackageIdentifier.ToLowerInvariant() }.GetHashCode();
             }
         }
+
     }
 }

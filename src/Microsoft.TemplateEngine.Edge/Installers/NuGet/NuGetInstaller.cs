@@ -11,7 +11,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.TemplateEngine.Abstractions;
 using Microsoft.TemplateEngine.Abstractions.Installer;
 using Microsoft.TemplateEngine.Abstractions.TemplatePackage;
-using Microsoft.TemplateEngine.Edge.Settings;
 using NuGet.Packaging;
 
 namespace Microsoft.TemplateEngine.Edge.Installers.NuGet
@@ -206,15 +205,6 @@ namespace Microsoft.TemplateEngine.Edge.Installers.NuGet
                         .ConfigureAwait(false);
                 }
 
-                if (CheckForRepeatedIdentity(nuGetPackageInfo))
-                {
-                    // TODO: add an actual message here
-                    return InstallResult.CreateFailure(
-                        installRequest,
-                        InstallerErrorCode.GenericError,
-                        "Message saying that there is already a template with that identity");
-                }
-
                 NuGetManagedTemplatePackage package = new NuGetManagedTemplatePackage(
                     _environmentSettings,
                     installer: this,
@@ -405,35 +395,6 @@ namespace Microsoft.TemplateEngine.Edge.Installers.NuGet
                 null,
                 nuspec.GetId(),
                 nuspec.GetVersion().ToNormalizedString());
-        }
-
-        private async Task<bool> CheckForRepeatedIdentity(NuGetPackageInfo packageInfo)
-        {
-            // TODO figure out how to setup Scanner class here
-            Scanner scanner = new Scanner("environmentSettings");
-
-            // Not sure if we should scan for components or not
-            // Packages can have more than one template at this point
-            ScanResult scanResult = scanner.Scan(packageInfo.FullPath, false);
-            var templatesInPackage = scanResult.Templates;
-
-            // TODO figure out how to setup TemplatePackageManager class here
-            TemplatePackageManager packageManager = new TemplatePackageManager("environmentSettings");
-            // I feel like this is not the best solution to get templates, or even if this is the place to be checking this
-            var currentTemplates = await packageManager.GetTemplatePackagesAsync(false, CancellationToken.None).ConfigureAwait(true);
-
-            foreach (ITemplateInfo toInstallTemplate in templatesInPackage)
-            {
-                foreach (ITemplateInfo localTemplate in currentTemplates)
-                {
-                    if (localTemplate.Identity == toInstallTemplate.Identity)
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
         }
     }
 }
