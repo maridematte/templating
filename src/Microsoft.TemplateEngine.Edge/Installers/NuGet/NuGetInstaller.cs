@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.TemplateEngine.Abstractions;
 using Microsoft.TemplateEngine.Abstractions.Installer;
 using Microsoft.TemplateEngine.Abstractions.TemplatePackage;
+using Microsoft.TemplateEngine.Edge.Settings;
 using NuGet.Packaging;
 
 namespace Microsoft.TemplateEngine.Edge.Installers.NuGet
@@ -205,6 +206,15 @@ namespace Microsoft.TemplateEngine.Edge.Installers.NuGet
                         .ConfigureAwait(false);
                 }
 
+                if (CheckForRepeatedIdentity(nuGetPackageInfo))
+                {
+                    // TODO: add an actual message here
+                    return InstallResult.CreateFailure(
+                        installRequest,
+                        InstallerErrorCode.GenericError,
+                        "Message saying that there is already a template with that identity");
+                }
+
                 NuGetManagedTemplatePackage package = new NuGetManagedTemplatePackage(
                     _environmentSettings,
                     installer: this,
@@ -395,6 +405,24 @@ namespace Microsoft.TemplateEngine.Edge.Installers.NuGet
                 null,
                 nuspec.GetId(),
                 nuspec.GetVersion().ToNormalizedString());
+        }
+
+        private bool CheckForRepeatedIdentity(NuGetPackageInfo packageInfo)
+        {
+            // TODO figure out how to setup Scanner class here
+            Scanner scanner = new Scanner("environmentSettings");
+
+            // Not sure if we should scan for components or not
+            ScanResult scanResult = scanner.Scan(packageInfo.FullPath, false);
+            foreach (ITemplateInfo template in scanResult.Templates)
+            {
+                if (template.Identity == packageInfo.PackageIdentifier)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }
