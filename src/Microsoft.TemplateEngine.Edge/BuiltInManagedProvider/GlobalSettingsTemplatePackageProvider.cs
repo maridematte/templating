@@ -284,17 +284,9 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
             _ = installRequest ?? throw new ArgumentNullException(nameof(installRequest));
             _ = installer ?? throw new ArgumentNullException(nameof(installer));
 
-            // When installing a local package the identifier will be a path, so we need to collect the template's actual identifier to compare
-            string packageIndetifier = installRequest.PackageIdentifier;
-            if (File.Exists(installRequest.PackageIdentifier))
-            {
-                // For now we are assuming there is only one templte in a package
-                packageIndetifier = GetTemplateIdentityFromPath(installRequest.PackageIdentifier)[0].Identity;
-            }
-
             (InstallerErrorCode result, string message) = await EnsureInstallPrerequisites(
                 packages,
-                packageIndetifier,
+                installRequest.PackageIdentifier,
                 installRequest.Version,
                 installer,
                 cancellationToken,
@@ -314,6 +306,16 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
                 throw new InvalidOperationException($"{nameof(installResult.TemplatePackage)} cannot be null when {nameof(installResult.Success)} is 'true'");
             }
 
+            var duplicatedTemplate = EnsureUniqueIdentifier(installResult, packages);
+            if (duplicatedTemplate is not null)
+            {
+                var installationError = HandleDuplicateTemplate();
+                if (installationError is not null)
+                {
+                    return installationError;
+                }
+            }
+
             lock (packages)
             {
                 packages.Add(((ISerializableInstaller)installer).Serialize(installResult.TemplatePackage));
@@ -321,21 +323,35 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
             return installResult;
         }
 
-        private IReadOnlyList<ITemplateInfo> GetTemplateIdentityFromPath(string packagePath)
+        // We check this after installation to make sure that we captured all templates inside a package
+        private IManagedTemplatePackage? EnsureUniqueIdentifier(InstallResult installResult, List<TemplatePackageData> installedPackages)
         {
             // TODO figure out how to setup Scanner class here
             Scanner scanner = new Scanner("environmentSettings");
-
-            // Not sure if we should scan for components or not
-            // Scan is the best way of getting the package information out of a path (I think)
-            ScanResult scanResult = scanner.Scan(packagePath, false);
-            var templatesInPackage = scanResult.Templates;
-            if (templatesInPackage.Any())
+            if (installResult.TemplatePackage is null)
             {
-                throw new InvalidOperationException($"No templates found within {packagePath}");
+                throw new InvalidOperationException($"No package found in the result of this install operation");
             }
 
-            return templatesInPackage;
+            ScanResult scanResult = scanner.Scan(installResult.TemplatePackage.MountPointUri, false);
+            var templatesInPackage = scanResult.Templates;
+            foreach (ITemplate template in templatesInPackage)
+            {
+                // TODO: scan templates inside the packages for this comparison
+                if (installedPackages.OfType<IManagedTemplatePackage>().FirstOrDefault(s => s.Identifier == template.Identity) is IManagedTemplatePackage repeatedTemplate)
+                {
+                    return repeatedTemplate;
+                }
+            }
+            return null;
+        }
+
+        private InstallResult? HandleDuplicateTemplate()
+        {
+            // Logic to chose which template stays based on priority
+            // returns an installation error with the message we want to display for that case
+            // returns null if we decide to just continue with that template
+            return null;
         }
 
         private class InstallRequestEqualityComparer : IEqualityComparer<InstallRequest>
