@@ -307,9 +307,19 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
             }
 
             // We check this after installation to make sure that we captured all templates inside a package
-            var duplicatedTemplate = EnsureUniqueIdentifier(installResult, packages);
+            var packageManager = new TemplatePackageManager(_environmentSettings);
+            var installedTemplates = await packageManager.GetTemplatesAsync(default).ConfigureAwait(true);
+
+            var duplicatedTemplate = EnsureUniqueIdentifierAsync(installResult, installedTemplates);
             if (duplicatedTemplate is not null)
             {
+                // This is a boilerplate if we want to check for managed packages, which I do not think necessary for now
+                //var managedPackages = await packageManager.GetTemplatePackagesAsync(false, cancellationToken).ConfigureAwait(false).OfType<IManagedTemplatePackage>().ToList()
+                //if (managedPackages.Contains(installResult.TemplatePackage))
+                //{
+
+                //}
+
                 // If there is a duplicated template, go with a warning and still install package
                 // We do not throw an error as it could cause issues with dotnet updates
                 _logger.LogWarning(message: $"Template {duplicatedTemplate} within package {installResult.TemplatePackage} has an identity conflict with an already existing template. To have the desired behavior please uninstall one of the packages");
@@ -322,7 +332,7 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
             return installResult;
         }
 
-        private IManagedTemplatePackage? EnsureUniqueIdentifier(InstallResult installResult, List<TemplatePackageData> installedPackages)
+        private ITemplateInfo? EnsureUniqueIdentifierAsync(InstallResult installResult, IReadOnlyList<ITemplateInfo> installedTemplates)
         {
             if (installResult.TemplatePackage is null)
             {
@@ -333,10 +343,10 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
             // It is assumed here that MountPointUri is  file path, this may be wrong!
             ScanResult scanResult = scanner.Scan(installResult.TemplatePackage.MountPointUri, false);
             var templatesInPackage = scanResult.Templates;
+
             foreach (ITemplate template in templatesInPackage)
             {
-                // thi compare packages identifier, which is not what we want! I think you might be able to get more details with IManagedTemplatePackage.GetDetails()
-                if (installedPackages.OfType<IManagedTemplatePackage>().FirstOrDefault(s => s.Identifier == template.Identity) is IManagedTemplatePackage repeatedTemplate)
+                if (installedTemplates.FirstOrDefault(s => s.Identity == template.Identity) is ITemplateInfo repeatedTemplate)
                 {
                     return repeatedTemplate;
                 }
