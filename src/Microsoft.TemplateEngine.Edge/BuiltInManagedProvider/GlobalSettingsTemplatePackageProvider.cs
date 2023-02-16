@@ -306,14 +306,13 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
                 throw new InvalidOperationException($"{nameof(installResult.TemplatePackage)} cannot be null when {nameof(installResult.Success)} is 'true'");
             }
 
+            // We check this after installation to make sure that we captured all templates inside a package
             var duplicatedTemplate = EnsureUniqueIdentifier(installResult, packages);
             if (duplicatedTemplate is not null)
             {
-                var installationError = HandleDuplicateTemplate();
-                if (installationError is not null)
-                {
-                    return installationError;
-                }
+                // If there is a duplicated template, go with a warning and still install package
+                // We do not throw an error as it could cause issues with dotnet updates
+                _logger.LogWarning(message: $"Template {duplicatedTemplate} within package {installResult.TemplatePackage} has an identity conflict with an already existing template. To have the desired behavior please uninstall one of the packages");
             }
 
             lock (packages)
@@ -323,34 +322,25 @@ namespace Microsoft.TemplateEngine.Edge.BuiltInManagedProvider
             return installResult;
         }
 
-        // We check this after installation to make sure that we captured all templates inside a package
         private IManagedTemplatePackage? EnsureUniqueIdentifier(InstallResult installResult, List<TemplatePackageData> installedPackages)
         {
-            // TODO figure out how to setup Scanner class here
-            Scanner scanner = new Scanner("environmentSettings");
             if (installResult.TemplatePackage is null)
             {
                 throw new InvalidOperationException($"No package found in the result of this install operation");
             }
 
+            Scanner scanner = new Scanner(_environmentSettings);
+            // It is assumed here that MountPointUri is  file path, this may be wrong!
             ScanResult scanResult = scanner.Scan(installResult.TemplatePackage.MountPointUri, false);
             var templatesInPackage = scanResult.Templates;
             foreach (ITemplate template in templatesInPackage)
             {
-                // TODO: scan templates inside the packages for this comparison
+                // thi compare packages identifier, which is not what we want! I think you might be able to get more details with IManagedTemplatePackage.GetDetails()
                 if (installedPackages.OfType<IManagedTemplatePackage>().FirstOrDefault(s => s.Identifier == template.Identity) is IManagedTemplatePackage repeatedTemplate)
                 {
                     return repeatedTemplate;
                 }
             }
-            return null;
-        }
-
-        private InstallResult? HandleDuplicateTemplate()
-        {
-            // Logic to chose which template stays based on priority
-            // returns an installation error with the message we want to display for that case
-            // returns null if we decide to just continue with that template
             return null;
         }
 
